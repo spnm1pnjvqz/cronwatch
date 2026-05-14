@@ -8,7 +8,7 @@ import (
 
 // mockNotifier records sent alerts and optionally returns an error.
 type mockNotifier struct {
-	sentAlerts []Alert
+	sentAlerts  []Alert
 	errToReturn error
 }
 
@@ -59,5 +59,23 @@ func TestMultiNotifier_Send_Empty(t *testing.T) {
 
 	if err := multi.Send(a); err != nil {
 		t.Errorf("expected no error with zero notifiers, got %v", err)
+	}
+}
+
+func TestMultiNotifier_Send_AllFail(t *testing.T) {
+	sentinel1 := errors.New("notifier 1 failed")
+	sentinel2 := errors.New("notifier 2 failed")
+	n1 := &mockNotifier{errToReturn: sentinel1}
+	n2 := &mockNotifier{errToReturn: sentinel2}
+
+	multi := NewMultiNotifier(n1, n2)
+	a := NewDriftAlert("batch-job", time.Minute, 3*time.Minute)
+
+	err := multi.Send(a)
+	if err == nil {
+		t.Fatal("expected an error when all notifiers fail, got nil")
+	}
+	if !errors.Is(err, sentinel1) && !errors.Is(err, sentinel2) {
+		t.Errorf("expected combined error to wrap at least one sentinel, got %v", err)
 	}
 }
