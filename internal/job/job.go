@@ -56,3 +56,21 @@ func NewRun(j *Job, startedAt, endedAt time.Time) *Run {
 
 	return r
 }
+
+// IsMissed reports whether the run was recorded as missed.
+func (r *Run) IsMissed() bool {
+	return r.Status == StatusMissed
+}
+
+// NewMissedRun creates a Run with StatusMissed for a job that did not execute
+// within its expected window. The expectedAt time is used as both start and end.
+func NewMissedRun(j *Job, expectedAt time.Time) *Run {
+	return &Run{
+		JobID:     j.ID,
+		StartedAt: expectedAt,
+		EndedAt:   expectedAt,
+		Duration:  0,
+		Status:    StatusMissed,
+		Message:   "job did not run within the expected window",
+	}
+}
