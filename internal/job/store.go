@@ -5,29 +5,28 @@ import (
 	"sync"
 )
 
-// Store holds job definitions and their run history.
+// Store holds jobs and their run history in memory.
 type Store struct {
 	mu      sync.RWMutex
 	jobs    map[string]*Job
 	history map[string][]Run
+	paused  map[string]bool
 }
 
-// NewStore creates an empty Store.
 func NewStore() *Store {
 	return &Store{
 		jobs:    make(map[string]*Job),
 		history: make(map[string][]Run),
+		paused:  make(map[string]bool),
 	}
 }
 
-// Add registers a job in the store.
-func (s *Store) Add(j *Job) {
+func (s *Store) Add(j Job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.jobs[j.Name] = j
+	s.jobs[j.Name] = &j
 }
 
-// Get retrieves a job by name.
 func (s *Store) Get(name string) (*Job, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -38,7 +37,6 @@ func (s *Store) Get(name string) (*Job, error) {
 	return j, nil
 }
 
-// List returns all registered jobs.
 func (s *Store) List() []*Job {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -49,7 +47,6 @@ func (s *Store) List() []*Job {
 	return out
 }
 
-// RecordRun appends a run to the job's history and updates the job's LastRun.
 func (s *Store) RecordRun(name string, r Run) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -62,15 +59,30 @@ func (s *Store) RecordRun(name string, r Run) error {
 	return nil
 }
 
-// GetHistory returns all recorded runs for a job.
 func (s *Store) GetHistory(name string) ([]Run, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if _, ok := s.jobs[name]; !ok {
 		return nil, fmt.Errorf("job %q not found", name)
 	}
-	runs := s.history[name]
-	out := make([]Run, len(runs))
-	copy(out, runs)
-	return out, nil
+	return s.history[name], nil
+}
+
+// SetPaused sets the paused state for a job. Returns error if job not found.
+func (s *Store) SetPaused(name string, paused bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.jobs[name]; !ok {
+		return fmt.Errorf("job %q not found", name)
+	}
+	s.paused[name] = paused
+	s.jobs[name].Paused = paused
+	return nil
+}
+
+// IsPaused reports whether the named job is currently paused.
+func (s *Store) IsPaused(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.paused[name]
 }

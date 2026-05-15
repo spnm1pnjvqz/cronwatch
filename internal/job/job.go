@@ -7,84 +7,52 @@ import (
 
 // Job represents a monitored cron job.
 type Job struct {
-	Name           string
-	Schedule       string
-	Interval       time.Duration
-	DriftThreshold time.Duration
-	LastRun        time.Time
-	LastDuration   time.Duration
-	AvgDuration    time.Duration
+	Name           string        `json:"name"`
+	Schedule       string        `json:"schedule"`
+	DriftThreshold time.Duration `json:"drift_threshold,omitempty"`
+	LastRun        *Run          `json:"last_run,omitempty"`
+	Paused         bool          `json:"paused"`
 }
 
-// Run records the result of a single job execution.
+// Run captures a single execution record.
 type Run struct {
-	Job      *Job
-	Start    time.Time
-	Duration time.Duration
-	Drifted  bool
-	Drift    time.Duration
+	StartedAt  time.Time     `json:"started_at"`
+	FinishedAt time.Time     `json:"finished_at"`
+	Duration   time.Duration `json:"duration"`
+	Drift      time.Duration `json:"drift,omitempty"`
+	Missed     bool          `json:"missed"`
+	Error      string        `json:"error,omitempty"`
 }
 
-// NewRun creates a Run for the given job and start/end times.
-// It calculates whether execution time drifted beyond the job's threshold.
-func NewRun(j *Job, start, end time.Time) (*Run, error) {
-	if j == nil {
-		return nil, fmt.Errorf("job must not be nil")
+// NewRun creates a Run for a completed execution. Returns an error if drift
+// exceeds the job's threshold (when one is set).
+func NewRun(j Job, started, finished time.Time, expectedStart time.Time) (Run, error) {
+	drift := started.Sub(expectedStart)
+	if drift < 0 {
+		drift = -drift
 	}
-	if end.Before(start) {
-		return nil, fmt.Errorf("end time %v is before start time %v", end, start)
+
+	r := Run{
+		StartedAt:  started,
+		FinishedAt: finished,
+		Duration:   finished.Sub(started),
+		Drift:      drift,
 	}
-	duration := end.Sub(start)
-	r := &Run{
-		Job:      j,
-		Start:    start,
-		Duration: duration,
-	}
-	if j.DriftThreshold > 0 && j.AvgDuration > 0 {
-		diff := duration - j.AvgDuration
-		if diff < 0 {
-			diff = -diff
-		}
-		if diff > j.DriftThreshold {
-			r.Drifted = true
-			r.Drift = diff
-		}
+
+	if j.DriftThreshold > 0 && drift > j.DriftThreshold {
+		return r, fmt.Errorf(
+			"job %q drifted %s (threshold %s)",
+			j.Name, drift, j.DriftThreshold,
+		)
 	}
 	return r, nil
 }
 
-// MissedRun describes a job that did not execute within its expected interval.
-type MissedRun struct {
-	Job         *Job
-	ExpectedAt  time.Time
-	DetectedAt  time.Time
-}
-
-// NewMissedRun creates a MissedRun detected at detectedAt.
-func NewMissedRun(j *Job, detectedAt time.Time) *MissedRun {
-	return &MissedRun{
-		Job:        j,
-		ExpectedAt: j.LastRun.Add(j.Interval),
-		DetectedAt: detectedAt,
+// NewMissedRun creates a Run record representing a missed execution.
+func NewMissedRun(expectedStart time.Time) Run {
+	return Run{
+		StartedAt: expectedStart,
+		Missed:    true,
+		Error:     "run not detected",
 	}
-}
-
-// IsMissed reports whether the job has missed its scheduled run by now.
-func (j *Job) IsMissed(now time.Time) bool {
-	if j.Interval <= 0 {
-		return false
-	}
-	return now.After(j.LastRun.Add(j.Interval))
-}
-
-// HasDrift reports whether the last recorded duration exceeded the threshold.
-func (j *Job) HasDrift() bool {
-	if j.DriftThreshold <= 0 || j.AvgDuration <= 0 {
-		return false
-	}
-	diff := j.LastDuration - j.AvgDuration
-	if diff < 0 {
-		diff = -diff
-	}
-	return diff > j.DriftThreshold
 }
