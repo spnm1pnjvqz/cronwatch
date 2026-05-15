@@ -1,76 +1,90 @@
 package job
 
-import "time"
-
-// Status represents the execution status of a cron job run.
-type Status string
-
-const (
-	StatusSuccess Status = "success"
-	StatusMissed  Status = "missed"
-	StatusDrift   Status = "drift"
+import (
+	"fmt"
+	"time"
 )
 
-// Job defines a monitored cron job and its expected schedule.
+// Job represents a monitored cron job.
 type Job struct {
-	ID              string        `json:"id"`
-	Name            string        `json:"name"`
-	Schedule        string        `json:"schedule"` // cron expression
-	ExpectedDuration time.Duration `json:"expected_duration"`
-	DriftThreshold  time.Duration `json:"drift_threshold"`
-	GracePeriod     time.Duration `json:"grace_period"`
-	CreatedAt       time.Time     `json:"created_at"`
+	Name           string
+	Schedule       string
+	Interval       time.Duration
+	DriftThreshold time.Duration
+	LastRun        time.Time
+	LastDuration   time.Duration
+	AvgDuration    time.Duration
 }
 
-// Run records a single execution of a cron job.
+// Run records the result of a single job execution.
 type Run struct {
-	JobID     string        `json:"job_id"`
-	StartedAt time.Time     `json:"started_at"`
-	EndedAt   time.Time     `json:"ended_at"`
-	Duration  time.Duration `json:"duration"`
-	Status    Status        `json:"status"`
-	Message   string        `json:"message,omitempty"`
+	Job      *Job
+	Start    time.Time
+	Duration time.Duration
+	Drifted  bool
+	Drift    time.Duration
 }
 
-// NewRun creates a Run and evaluates its status against the job's thresholds.
-func NewRun(j *Job, startedAt, endedAt time.Time) *Run {
-	duration := endedAt.Sub(startedAt)
-	r := &Run{
-		JobID:     j.ID,
-		StartedAt: startedAt,
-		EndedAt:   endedAt,
-		Duration:  duration,
-		Status:    StatusSuccess,
+// NewRun creates a Run for the given job and start/end times.
+// It calculates whether execution time drifted beyond the job's threshold.
+func NewRun(j *Job, start, end time.Time) (*Run, error) {
+	if j == nil {
+		return nil, fmt.Errorf("job must not be nil")
 	}
-
-	if j.ExpectedDuration > 0 && j.DriftThreshold > 0 {
-		diff := duration - j.ExpectedDuration
+	if end.Before(start) {
+		return nil, fmt.Errorf("end time %v is before start time %v", end, start)
+	}
+	duration := end.Sub(start)
+	r := &Run{
+		Job:      j,
+		Start:    start,
+		Duration: duration,
+	}
+	if j.DriftThreshold > 0 && j.AvgDuration > 0 {
+		diff := duration - j.AvgDuration
 		if diff < 0 {
 			diff = -diff
 		}
 		if diff > j.DriftThreshold {
-			r.Status = StatusDrift
-			r.Message = "execution time drifted beyond threshold"
+			r.Drifted = true
+			r.Drift = diff
 		}
 	}
-
-	return r
+	return r, nil
 }
 
-// IsMissed reports whether the run was recorded as missed.
-func (r *Run) IsMissed() bool {
-	return r.Status == StatusMissed
+// MissedRun describes a job that did not execute within its expected interval.
+type MissedRun struct {
+	Job         *Job
+	ExpectedAt  time.Time
+	DetectedAt  time.Time
 }
 
-// NewMissedRun creates a Run with StatusMissed for a job that did not execute
-// within its expected window. The expectedAt time is used as both start and end.
-func NewMissedRun(j *Job, expectedAt time.Time) *Run {
-	return &Run{
-		JobID:     j.ID,
-		StartedAt: expectedAt,
-		EndedAt:   expectedAt,
-		Duration:  0,
-		Status:    StatusMissed,
-		Message:   "job did not run within the expected window",
+// NewMissedRun creates a MissedRun detected at detectedAt.
+func NewMissedRun(j *Job, detectedAt time.Time) *MissedRun {
+	return &MissedRun{
+		Job:        j,
+		ExpectedAt: j.LastRun.Add(j.Interval),
+		DetectedAt: detectedAt,
 	}
+}
+
+// IsMissed reports whether the job has missed its scheduled run by now.
+func (j *Job) IsMissed(now time.Time) bool {
+	if j.Interval <= 0 {
+		return false
+	}
+	return now.After(j.LastRun.Add(j.Interval))
+}
+
+// HasDrift reports whether the last recorded duration exceeded the threshold.
+func (j *Job) HasDrift() bool {
+	if j.DriftThreshold <= 0 || j.AvgDuration <= 0 {
+		return false
+	}
+	diff := j.LastDuration - j.AvgDuration
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff > j.DriftThreshold
 }
