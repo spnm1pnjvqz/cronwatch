@@ -5,71 +5,72 @@ import (
 	"sync"
 )
 
-// Store is an in-memory repository for Jobs and their Runs.
+// Store holds job definitions and their run history.
 type Store struct {
-	mu   sync.RWMutex
-	jobs map[string]*Job
-	runs map[string][]*Run // keyed by job ID
+	mu      sync.RWMutex
+	jobs    map[string]*Job
+	history map[string][]Run
 }
 
-// NewStore initialises an empty Store.
+// NewStore creates an empty Store.
 func NewStore() *Store {
 	return &Store{
-		jobs: make(map[string]*Job),
-		runs: make(map[string][]*Run),
+		jobs:    make(map[string]*Job),
+		history: make(map[string][]Run),
 	}
 }
 
-// AddJob registers a new job. Returns an error if the ID already exists.
-func (s *Store) AddJob(j *Job) error {
+// Add registers a job in the store.
+func (s *Store) Add(j *Job) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.jobs[j.ID]; exists {
-		return fmt.Errorf("job %q already exists", j.ID)
-	}
-	s.jobs[j.ID] = j
-	return nil
+	s.jobs[j.Name] = j
 }
 
-// GetJob retrieves a job by ID.
-func (s *Store) GetJob(id string) (*Job, error) {
+// Get retrieves a job by name.
+func (s *Store) Get(name string) (*Job, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	j, ok := s.jobs[id]
+	j, ok := s.jobs[name]
 	if !ok {
-		return nil, fmt.Errorf("job %q not found", id)
+		return nil, fmt.Errorf("job %q not found", name)
 	}
 	return j, nil
 }
 
-// ListJobs returns all registered jobs.
-func (s *Store) ListJobs() []*Job {
+// List returns all registered jobs.
+func (s *Store) List() []*Job {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	list := make([]*Job, 0, len(s.jobs))
+	out := make([]*Job, 0, len(s.jobs))
 	for _, j := range s.jobs {
-		list = append(list, j)
+		out = append(out, j)
 	}
-	return list
+	return out
 }
 
-// RecordRun appends a run for the given job.
-func (s *Store) RecordRun(r *Run) error {
+// RecordRun appends a run to the job's history and updates the job's LastRun.
+func (s *Store) RecordRun(name string, r Run) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.jobs[r.JobID]; !ok {
-		return fmt.Errorf("job %q not found", r.JobID)
+	j, ok := s.jobs[name]
+	if !ok {
+		return fmt.Errorf("job %q not found", name)
 	}
-	s.runs[r.JobID] = append(s.runs[r.JobID], r)
+	j.LastRun = &r
+	s.history[name] = append(s.history[name], r)
 	return nil
 }
 
-// GetRuns returns all recorded runs for a job.
-func (s *Store) GetRuns(jobID string) ([]*Run, error) {
+// GetHistory returns all recorded runs for a job.
+func (s *Store) GetHistory(name string) ([]Run, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if _, ok := s.jobs[jobID]; !ok {
-		return nil, fmt.Errorf("job %q not found", jobID)
+	if _, ok := s.jobs[name]; !ok {
+		return nil, fmt.Errorf("job %q not found", name)
 	}
-	return s.runs[jobID], nil
+	runs := s.history[name]
+	out := make([]Run, len(runs))
+	copy(out, runs)
+	return out, nil
 }
