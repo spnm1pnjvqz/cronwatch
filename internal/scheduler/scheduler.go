@@ -58,18 +58,23 @@ func (s *Scheduler) check() {
 	now := time.Now()
 	jobs := s.store.All()
 	for _, j := range jobs {
-		if j.IsMissed(now) {
-			a := alert.NewMissedAlert(j)
-			if err := s.notifier.Send(a); err != nil {
-				log.Printf("scheduler: failed to send missed alert for job %q: %v", j.Name, err)
-			}
-			continue
+		s.checkJob(j, now)
+	}
+}
+
+// checkJob evaluates a single job and sends a missed or drift alert as needed.
+func (s *Scheduler) checkJob(j *job.Job, now time.Time) {
+	if j.IsMissed(now) {
+		a := alert.NewMissedAlert(j)
+		if err := s.notifier.Send(a); err != nil {
+			log.Printf("scheduler: failed to send missed alert for job %q: %v", j.Name, err)
 		}
-		if j.HasDrift() {
-			a := alert.NewDriftAlert(j)
-			if err := s.notifier.Send(a); err != nil {
-				log.Printf("scheduler: failed to send drift alert for job %q: %v", j.Name, err)
-			}
+		return
+	}
+	if j.HasDrift() {
+		a := alert.NewDriftAlert(j)
+		if err := s.notifier.Send(a); err != nil {
+			log.Printf("scheduler: failed to send drift alert for job %q: %v", j.Name, err)
 		}
 	}
 }
