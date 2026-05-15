@@ -24,6 +24,11 @@ type Run struct {
 	Error      string        `json:"error,omitempty"`
 }
 
+// Succeeded reports whether the run completed without error and was not missed.
+func (r Run) Succeeded() bool {
+	return !r.Missed && r.Error == ""
+}
+
 // NewRun creates a Run for a completed execution. Returns an error if drift
 // exceeds the job's threshold (when one is set).
 func NewRun(j Job, started, finished time.Time, expectedStart time.Time) (Run, error) {
