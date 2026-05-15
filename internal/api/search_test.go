@@ -27,6 +27,17 @@ func setupStoreWithSearchData(t *testing.T) *job.Store {
 	return s
 }
 
+// decodeSearchResponse decodes the JSON body from a search response recorder
+// and fails the test if decoding fails.
+func decodeSearchResponse(t *testing.T, rr *httptest.ResponseRecorder) map[string]interface{} {
+	t.Helper()
+	var resp map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	return resp
+}
+
 func TestSearchJobs_MatchByName(t *testing.T) {
 	h := NewHandler(setupStoreWithSearchData(t), nil)
 	req := httptest.NewRequest(http.MethodGet, "/jobs/search?q=backup", nil)
@@ -36,8 +47,7 @@ func TestSearchJobs_MatchByName(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
-	var resp map[string]interface{}
-	json.NewDecoder(rr.Body).Decode(&resp)
+	resp := decodeSearchResponse(t, rr)
 	if int(resp["count"].(float64)) != 1 {
 		t.Errorf("expected 1 result, got %v", resp["count"])
 	}
@@ -49,8 +59,7 @@ func TestSearchJobs_MatchByTag(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.SearchJobs(rr, req)
 
-	var resp map[string]interface{}
-	json.NewDecoder(rr.Body).Decode(&resp)
+	resp := decodeSearchResponse(t, rr)
 	if int(resp["count"].(float64)) != 1 {
 		t.Errorf("expected 1 result for tag match, got %v", resp["count"])
 	}
@@ -62,8 +71,7 @@ func TestSearchJobs_MatchByLabelValue(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.SearchJobs(rr, req)
 
-	var resp map[string]interface{}
-	json.NewDecoder(rr.Body).Decode(&resp)
+	resp := decodeSearchResponse(t, rr)
 	if int(resp["count"].(float64)) != 1 {
 		t.Errorf("expected 1 result for label value match, got %v", resp["count"])
 	}
@@ -75,8 +83,7 @@ func TestSearchJobs_NoMatches(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.SearchJobs(rr, req)
 
-	var resp map[string]interface{}
-	json.NewDecoder(rr.Body).Decode(&resp)
+	resp := decodeSearchResponse(t, rr)
 	if int(resp["count"].(float64)) != 0 {
 		t.Errorf("expected 0 results, got %v", resp["count"])
 	}
