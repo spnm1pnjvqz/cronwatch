@@ -27,6 +27,17 @@ func TestNewTagSet_IgnoresBlanks(t *testing.T) {
 	}
 }
 
+func TestNewTagSet_Empty(t *testing.T) {
+	ts := NewTagSet([]string{})
+	if len(ts.Slice()) != 0 {
+		t.Error("expected empty TagSet from empty input")
+	}
+	ts2 := NewTagSet(nil)
+	if len(ts2.Slice()) != 0 {
+		t.Error("expected empty TagSet from nil input")
+	}
+}
+
 func TestTagSet_Contains_CaseInsensitive(t *testing.T) {
 	ts := NewTagSet([]string{"Critical"})
 	if !ts.Contains("CRITICAL") {
