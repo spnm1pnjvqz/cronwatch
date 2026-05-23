@@ -86,3 +86,17 @@ func (s *Store) IsPaused(name string) bool {
 	defer s.mu.RUnlock()
 	return s.paused[name]
 }
+
+// Delete removes a job and its run history from the store.
+// Returns an error if the job does not exist.
+func (s *Store) Delete(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.jobs[name]; !ok {
+		return fmt.Errorf("job %q not found", name)
+	}
+	delete(s.jobs, name)
+	delete(s.history, name)
+	delete(s.paused, name)
+	return nil
+}
